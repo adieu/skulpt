@@ -67,17 +67,22 @@ if ( ! TurtleGraphics ) {
 	with ( this.context ) {
 	    if (TurtleGraphics.canvasInit == false) {   // This is a workaround until I understand skulpt re-running better
 		                                        // the downside is that this limits us to a single turtle...
+		save();
 		translate(canvas.width/2, canvas.height/2); // move 0,0 to center.
 		scale(1,-1); // scaling like this flips the y axis the right way.
-		save();
+//		save();
 		TurtleGraphics.canvasInit = true;
 	    } else {
 		clear_canvas(this.canvasID);
 		TurtleGraphics.turtleList = [];
 	    }
-
+	    this.llx = -canvas.width/2;
+	    this.lly = -canvas.height/2;
+            this.urx = canvas.width/2;
+            this.ury = canvas.height/2;
 	    this.home = new Vector([0.0, 0.0, 0.0]);
 	    this.visible = true;
+	    this.lineScale = 1.0;
 	    this.drawingEvents = [];
 	    this.eventLoop = false;
 	    this.filling = false;
@@ -224,9 +229,9 @@ if ( ! TurtleGraphics ) {
 	with ( context ) {
 	    for (var i in TurtleGraphics.turtleList) {
 		var t = TurtleGraphics.turtleList[i]
-		clearRect(-canvas.width/2,-canvas.height/2,canvas.width,canvas.height);
+		clearRect(t.llx,t.lly,(t.urx-t.llx),(t.ury-t.lly));
 		moveTo(0,0);
-		lineWidth = 2;
+		lineWidth = t.penWidth;
 		lineCap = 'round';
 		lineJoin = 'round';
 		var filling = false;
@@ -289,19 +294,23 @@ if ( ! TurtleGraphics ) {
 		t.aCount++;
 		if (t.visible && currentHeadInfo) {
 		    // draw the turtle
+		    console.log('drawing turtle');
+		    var tsize = 5 * t.lineScale;
 		    var oldp = new Vector(currentHeadInfo[1], currentHeadInfo[2], 0);
 		    var newp = new Vector(currentHeadInfo[3], currentHeadInfo[4], 0);
 		    var head = oldp.sub(newp).normalize();
 		    // draw line to 30 degrees left and 5 units long
 		    // draw line to 30 degrees right and 5 units long
 		    var portWing = head.rotateNormal(t.normal.cross(head),t.normal,-30*Degree2Rad);
-		    var endPt = newp.linear(1,5,portWing);
+		    var endPt = newp.linear(1,tsize,portWing);
+		    beginPath();
 		    moveTo(newp[0],newp[1]);
 		    lineTo(endPt[0],endPt[1]);
 		    var starWing = head.rotateNormal(t.normal.cross(head),t.normal,30*Degree2Rad);		    
-		    endPt = newp.linear(1,5,starWing);
+		    endPt = newp.linear(1,tsize,starWing);
 		    moveTo(newp[0],newp[1]);
 		    lineTo(endPt[0],endPt[1]);
+		    closePath();
 		    stroke();
 		}
 		if (t.aCount >= t.drawingEvents.length) {
@@ -373,6 +382,7 @@ if ( ! TurtleGraphics ) {
     Turtle.prototype.dot = function() {
 	var size = 2;
 	if (arguments.length >= 1) size = arguments[0];
+	size = size * this.lineScale;
 	with (this) {
 	    with ( context ) {
 		var color = fillStyle;
@@ -423,6 +433,25 @@ if ( ! TurtleGraphics ) {
 	}
     }
 
+    Turtle.prototype.setworldcoordinates = function(llx,lly,urx,ury) {
+	this.context.restore();
+	this.context.scale(this.context.canvas.width/(urx-llx),-this.context.canvas.height/(ury-lly));
+	if (lly == 0)
+	    this.context.translate(-llx,lly-(ury-lly));
+	else if (lly > 0)
+	    this.context.translate(-llx,-lly*2);
+	else
+	    this.context.translate(-llx,lly);
+	this.lineScale = (urx-llx)/this.context.canvas.width;
+	console.log(this.lineScale);
+	this.penWidth = this.penWidth * this.lineScale;
+	this.context.save();
+
+	t.llx = llx;
+	t.lly = lly;
+	t.urx = urx;
+	t.ury = ury;
+    }
 
 //
 // Pen and Style functions
@@ -440,6 +469,7 @@ if ( ! TurtleGraphics ) {
     }
 
     Turtle.prototype.set_pen_width = function (w) {
+	w = w * this.lineScale;
 	if (this.animate)
 	    this.drawingEvents.push(["PW", w]);
 	else
