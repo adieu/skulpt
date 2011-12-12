@@ -22,6 +22,7 @@ function Compiler(filename, st, flags, sourceCodeForAnnotation)
     this.result = [];
 
     this.gensymcount = 0;
+	this.expr_hint = null;
 
     this.allUnits = [];
 
@@ -483,9 +484,9 @@ Compiler.prototype.vexpr = function(e, data, augstoreval)
             return this.ccall(e);
         case Num:
             if (typeof e.n === "number")
-                return e.n;
+                return this._gr('int', e.n);
             else if (e.n instanceof Sk.builtin.lng)
-                return "Sk.longFromStr('" + e.n.tp$str().v + "')";
+                return this._gr('long', "Sk.longFromStr('" + e.n.tp$str().v + "')");
             goog.asserts.fail("unhandled Num type");
         case Str:
             return this._gr('str', "new Sk.builtins['str'](", e.s['$r']().v, ")");
@@ -1388,7 +1389,7 @@ Compiler.prototype.ccontinue = function(s)
 /**
  * compiles a statement
  */
-Compiler.prototype.vstmt = function(s)
+Compiler.prototype.vstmt = function(s, sequence)
 {
     this.u.lineno = s.lineno;
     this.u.linenoSet = false;
@@ -1446,7 +1447,10 @@ Compiler.prototype.vstmt = function(s)
         case Global:
             break;
         case Expr:
-            this.vexpr(s.value);
+			var hint = this.vexpr(s.value);
+			if (sequence==0) {
+				this.expr_hint = hint;
+			};
             break;
         case Pass:
             break;
@@ -1465,7 +1469,7 @@ Compiler.prototype.vstmt = function(s)
 
 Compiler.prototype.vseqstmt = function(stmts)
 {
-    for (var i = 0; i < stmts.length; ++i) this.vstmt(stmts[i]);
+    for (var i = 0; i < stmts.length; ++i) this.vstmt(stmts[i], i);
 };
 
 var OP_FAST = 0;
@@ -1657,7 +1661,7 @@ Compiler.prototype.exitScope = function()
 Compiler.prototype.cbody = function(stmts)
 {
     for (var i = 0; i < stmts.length; ++i)
-        this.vstmt(stmts[i]);
+        this.vstmt(stmts[i], i);
 };
 
 Compiler.prototype.cprint = function(s)
@@ -1702,6 +1706,40 @@ Compiler.prototype.cmod = function(mod)
     return modf;
 };
 
+Compiler.prototype.cstmt = function(stmt)
+{
+    //print("-----");
+    //print(Sk.astDump(mod));
+    var modf = this.enterScope(new Sk.builtin.str("<module>"), stmt, 0);
+
+    var entryBlock = this.newBlock('module entry');
+    this.u.prefixCode = "var " + modf + "=(function($modname, $context){";
+    this.u.varDeclsCode = "var $blk=" + entryBlock + ",$exc=[],$gbl=$context,$loc=$gbl;$gbl.__name__=$modname;";
+    this.u.switchCode = "while(true){switch($blk){";
+    this.u.suffixCode = "}}});";
+
+    switch (stmt.constructor)
+    {
+        case Module:
+            this.cbody(stmt.body);
+			if (stmt.body[0].constructor == Expr)
+			{
+				out("return " + this.expr_hint + ";");
+			}else
+			{
+				out("return null;");
+			}
+
+            break;
+        default:
+            goog.asserts.fail("todo; unhandled case in compilerMod");
+    }
+    this.exitScope();
+
+    this.result.push(this.outputAllUnits());
+    return modf;
+};
+
 /**
  * @param {string} source the code
  * @param {string} filename where it came from
@@ -1722,4 +1760,25 @@ Sk.compile = function(source, filename, mode)
     };
 };
 
+/**
+ * @param {string} source the code
+ * @param {string} filename where it came from
+ * @param {string} mode one of 'exec', 'eval', or 'single'
+ */
+Sk.compile_stmt = function(source, filename, mode)
+{
+    //print("FILE:", filename);
+    var cst = Sk.parse(filename, source);
+    var ast = Sk.astFromParse(cst, filename);
+    var st = Sk.symboltable(ast, filename);
+    var c = new Compiler(filename, st, 0, source); // todo; CO_xxx
+    var funcname = c.cstmt(ast);
+    var ret = c.result.join('');
+    return {
+        funcname: funcname,
+        code: ret
+    };
+};
+
 goog.exportSymbol("Sk.compile", Sk.compile);
+goog.exportSymbol("Sk.compile_stmt", Sk.compile_stmt);

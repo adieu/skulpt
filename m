@@ -51,6 +51,7 @@ Files = [
         'src/compile.js',
         'src/import.js',
         'src/builtindict.js',
+        'src/terminal.js',
         ("support/jsbeautify/beautify.js", 'test'),
         ]
 
